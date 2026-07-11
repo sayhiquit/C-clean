@@ -1,0 +1,15 @@
+﻿Name	PathContains	Category	Risk	Action	Recommendation	Reason
+Chrome 浏览器缓存	\Google\Chrome\User Data\	BrowserCache	Low	Clean	可清理	浏览器缓存，可重新生成。
+Edge 浏览器缓存	\Microsoft\Edge\User Data\	BrowserCache	Low	Clean	可清理	浏览器缓存，可重新生成。
+用户临时目录	\AppData\Local\Temp\	Temp	Low	Clean	可清理	用户临时文件，通常可清理。
+崩溃转储	\CrashDumps\	Dump	Low	Clean	可清理	软件崩溃转储，可按需清理。
+WinSxS 组件存储	\Windows\WinSxS\	WindowsComponent	Blocked	Locked	官方清理	Windows 组件存储，禁止手动删除。
+Windows Installer	\Windows\Installer\	WindowsInstaller	Blocked	Locked	禁止	安装缓存影响修复、卸载和更新，禁止手动删除。
+Windows 更新缓存	\Windows\SoftwareDistribution\Download\	WindowsUpdate	Medium	Review	官方清理	Windows 更新下载缓存，建议使用系统官方清理。
+Docker 数据	\AppData\Local\Docker\	DeveloperData	Medium	Review	专项清理	Docker 镜像和构建缓存应使用 Docker prune 或迁移数据目录。
+npm 缓存	\AppData\Local\npm-cache\	DeveloperCache	Low	Review	专项清理	npm 缓存建议使用 npm cache clean。
+pip 缓存	\AppData\Local\pip\Cache\	DeveloperCache	Low	Review	专项清理	pip 缓存建议使用 pip cache purge。
+Gradle 缓存	\.gradle\caches\	DeveloperCache	Medium	Review	专项清理	Gradle 缓存可清理但会重新下载依赖。
+Maven 仓库	\.m2\repository\	DeveloperCache	Medium	Review	迁移	Maven 本地仓库可迁移，不建议直接删除。
+微信文件	\Documents\WeChat Files\	UserData	High	Keep	迁移	聊天文件通常很大，但属于用户数据，建议迁移。
+QQ 文件	\Documents\Tencent Files\	UserData	High	Keep	迁移	聊天文件属于用户数据，建议迁移。

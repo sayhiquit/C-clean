@@ -1,0 +1,24 @@
+# Runtime/cache data
+outputs/CDriveGovernanceDesktop/webview-user-data/
+outputs/CDriveGovernanceDesktop/sdc-data/quarantine/
+outputs/CDriveGovernanceDesktop/sdc-data/reports/
+outputs/CDriveGovernanceDesktop/sdc-data/logs/
+outputs/CDriveGovernanceDesktop/web/self-check-data.json
+outputs/CDriveGovernanceDesktop/web/data.json
+outputs/CDriveGovernanceDesktop/web/probe-*.json
+outputs/CDriveGovernanceDesktop/web/test-*.json
+outputs/CDriveGovernanceDesktop/MYLSystemDiskTool_v*.exe
+
+# Local user state
+*.log
+*.tmp
+Thumbs.db
+desktop.ini
+
+# Build intermediates and generated publish staging
+outputs/CDriveGovernanceDesktop_publish/
+bin/
+obj/
+
+# Keep generated release zips out of git history; upload them as GitHub Releases instead.
+outputs/*.zip

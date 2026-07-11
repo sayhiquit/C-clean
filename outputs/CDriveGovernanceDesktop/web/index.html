@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MYL系统盘检测工具</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">MYL</div>
+        <div>
+          <strong>MYL系统盘检测工具</strong>
+          <span>诊断 · 清理 · 迁移</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-card">
+        <h4>推荐流程</h4>
+        <p>先看总览，再做诊断。大文件优先迁移，Windows 组件走官方清理，低风险缓存才进入隔离清理。</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title">
+          <h1 id="pageTitle">总览</h1>
+          <p id="pageDesc">以空间治理为目标，区分可清理、可迁移、官方清理、专项处理与禁止操作。</p>
+        </div>
+        <div class="status" id="statusPills"></div>
+      </header>
+
+      <section class="content">
+        <div class="view active" id="overviewView"></div>
+        <div class="view" id="diagnosisView"></div>
+        <div class="view" id="cleanupView"></div>
+        <div class="view" id="migrationView"></div>
+        <div class="view" id="officialView"></div>
+        <div class="view" id="quarantineView"></div>
+        <div class="view" id="rulesView"></div>
+        <div class="view" id="settingsView"></div>
+        <div class="view" id="trustView"></div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div>
+        <h3 id="drawerTitle">详情</h3>
+        <p id="drawerSubtitle">选择一个项目查看风险说明和建议操作。</p>
+      </div>
+      <button class="icon-btn" id="drawerClose" aria-label="关闭">×</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+  <div class="toast" id="toast"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

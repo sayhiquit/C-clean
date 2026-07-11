@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "mode": "保守模式",
+    "rules": 14,
+    "lastScan": "09:32"
+  },
+  "drive": {
+    "name": "C:",
+    "total": "237.0 GB",
+    "used": "168.4 GB",
+    "free": "68.6 GB",
+    "usedPercent": 71
+  },
+  "metrics": [
+    { "label": "系统盘已用", "value": "168.4 GB", "hint": "总容量 237.0 GB" },
+    { "label": "预计可安全清理", "value": "4.8 GB", "hint": "低风险缓存与临时文件" },
+    { "label": "建议迁移空间", "value": "72.6 GB", "hint": "用户文件、聊天文件、项目数据" },
+    { "label": "需官方处理", "value": "18.3 GB", "hint": "Windows 更新与组件存储" }
+  ],
+  "usageBars": [
+    { "name": "用户数据", "size": "72.6 GB", "percent": 52, "tone": "green" },
+    { "name": "软件与缓存", "size": "43.1 GB", "percent": 36, "tone": "blue" },
+    { "name": "Windows 组件", "size": "31.5 GB", "percent": 28, "tone": "amber" },
+    { "name": "禁止手动处理", "size": "12.8 GB", "percent": 18, "tone": "red" }
+  ],
+  "recommendations": [
+    { "title": "迁移微信文件", "size": "38.2 GB", "action": "迁移", "detail": "发现聊天文件约 38.2 GB，建议迁移保存位置到 D 盘。" },
+    { "title": "Windows 更新缓存", "size": "6.4 GB", "action": "官方清理", "detail": "建议通过系统存储设置或磁盘清理处理，不手动删除。" },
+    { "title": "浏览器缓存", "size": "2.1 GB", "action": "可清理", "detail": "Chrome 与 Edge 缓存约 2.1 GB，可进入隔离清理。" }
+  ],
+  "diagnosis": [
+    { "area": "微信文件", "size": "38.2 GB", "action": "迁移", "risk": "低", "path": "C:\\Users\\sss\\Documents\\WeChat Files" },
+    { "area": "Docker 数据", "size": "24.6 GB", "action": "专项清理", "risk": "中", "path": "C:\\Users\\sss\\AppData\\Local\\Docker" },
+    { "area": "Windows 组件存储", "size": "11.9 GB", "action": "官方清理", "risk": "禁止", "path": "C:\\Windows\\WinSxS" },
+    { "area": "下载目录", "size": "10.4 GB", "action": "迁移", "risk": "低", "path": "C:\\Users\\sss\\Downloads" },
+    { "area": "Windows Installer", "size": "8.5 GB", "action": "禁止", "risk": "禁止", "path": "C:\\Windows\\Installer" },
+    { "area": "浏览器缓存", "size": "2.1 GB", "action": "清理", "risk": "低", "path": "Chrome / Edge Cache" }
+  ],
+  "cleanup": [
+    { "name": "浏览器缓存", "source": "Chrome / Edge", "risk": "低风险", "size": "2.1 GB", "reason": "缓存可重新生成" },
+    { "name": "用户临时目录", "source": "Temp", "risk": "低风险", "size": "1.4 GB", "reason": "临时文件，可隔离清理" },
+    { "name": "崩溃转储", "source": "CrashDumps", "risk": "低风险", "size": "640 MB", "reason": "问题定位后可清理" }
+  ],
+  "migration": [
+    { "title": "微信文件", "size": "38.2 GB", "detail": "迁移聊天文件保存位置到 D 盘，不删除聊天记录。" },
+    { "title": "下载目录", "size": "10.4 GB", "detail": "整理安装包、视频和压缩包，移动到数据盘。" },
+    { "title": "Maven 仓库", "size": "7.8 GB", "detail": "可迁移到 D 盘并配置 settings.xml。" },
+    { "title": "项目目录", "size": "16.2 GB", "detail": "代码和素材项目建议从 C 盘移出。" }
+  ],
+  "official": [
+    { "label": "Windows 更新缓存", "value": "6.4 GB", "hint": "建议打开存储设置" },
+    { "label": "组件存储 WinSxS", "value": "11.9 GB", "hint": "只用 DISM 清理" },
+    { "label": "Installer 缓存", "value": "8.5 GB", "hint": "禁止手动删除" }
+  ],
+  "quarantine": [
+    { "batch": "20260609-001", "source": "Chrome 缓存", "size": "860 MB", "time": "09:32", "expires": "6 天", "status": "可恢复" },
+    { "batch": "20260609-002", "source": "Temp 临时文件", "size": "1.4 GB", "time": "09:40", "expires": "6 天", "status": "可恢复" }
+  ],
+  "rules": [
+    { "name": "Chrome 浏览器缓存", "match": "\\Google\\Chrome\\User Data\\", "policy": "低风险 / 可清理" },
+    { "name": "Windows Installer", "match": "\\Windows\\Installer\\", "policy": "禁止 / 不手动删除" },
+    { "name": "Docker 数据", "match": "\\AppData\\Local\\Docker\\", "policy": "中风险 / 专项清理" },
+    { "name": "微信文件", "match": "\\Documents\\WeChat Files\\", "policy": "高风险 / 迁移" }
+  ]
+}
