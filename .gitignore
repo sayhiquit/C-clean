@@ -17,6 +17,7 @@ desktop.ini
 
 # Build intermediates and generated publish staging
 outputs/CDriveGovernanceDesktop_publish/
+outputs/CDriveGovernanceDesktop_publish_*/
 bin/
 obj/
 

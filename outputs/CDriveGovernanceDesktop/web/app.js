@@ -10,6 +10,7 @@ const fallbackData = {
   usageBars: [],
   recommendations: [],
   diagnosis: [],
+  provenance: [],
   cleanup: [],
   migration: [],
   official: [],
@@ -23,6 +24,7 @@ const fallbackData = {
 const views = {
   overview: ["总览", "以空间治理为目标，区分可清理、可迁移、官方清理、专项处理与禁止操作。"],
   diagnosis: ["空间诊断", "找到真正的大户，并给出清理、迁移、官方清理或保留建议。"],
+  provenance: ["来源识别", "识别文件是系统产出、软件运行产出还是用户操作产出，并按安全程度和创建时间处理。"],
   cleanup: ["安全清理", "只处理低风险、可回滚项目，避免把深度扫描变成深度误删。"],
   migration: ["迁移建议", "释放大空间优先靠迁移用户数据和软件数据，而不是直接删除。"],
   official: ["官方清理", "Windows 组件、更新缓存和系统文件必须通过官方方式处理。"],
@@ -35,6 +37,7 @@ const views = {
 const navIcons = {
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 13h7V4H4v9Zm9 7h7V4h-7v16ZM4 20h7v-5H4v5Z"/></svg>',
   diagnosis: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19V5m0 14h16M8 16V9m4 7V7m4 9v-4"/></svg>',
+  provenance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/><path d="m15 17 2 2 4-5"/></svg>',
   cleanup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16M9 7V5h6v2m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg>',
   migration: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 7h10v10H7zM3 12h4m10 0h4m-9-9v4m0 10v4"/></svg>',
   official: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-5"/></svg>',
@@ -116,7 +119,16 @@ const cleanupValue = (row, key) => {
 const rowValue = (row, key) => {
   if (key === "size") return parseSize(row.size);
   if (key === "count") return Number(row.count || 0);
+  if (key === "safetyScore") return Number(row.safetyScore || 0);
   return String(row[key] ?? "").toLowerCase();
+};
+
+const safetyClass = value => {
+  const text = String(value || "");
+  if (text.includes("高风险")) return "block";
+  if (text.includes("中风险")) return "special";
+  if (text.includes("低风险")) return "clean";
+  return "keep";
 };
 
 async function loadData() {
@@ -602,6 +614,196 @@ function renderDiagnosis(rows, meta = {}) {
       showToast("已切换到官方清理入口");
     });
   });
+}
+
+function renderProvenance(rows = []) {
+  const state = { filterText: "", sourceType: "all", safety: "all", sortKey: "created", sortDir: "desc" };
+  const columns = [
+    { key: "name", label: "文件" },
+    { key: "sourceType", label: "产出来源" },
+    { key: "producer", label: "产出者" },
+    { key: "safetyLevel", label: "安全程度" },
+    { key: "created", label: "创建时间" },
+    { key: "size", label: "大小" }
+  ];
+  const view = document.getElementById("provenanceView");
+  view.innerHTML = `
+    <div class="source-banner">
+      <div>来源识别会优先展示用户操作产出的文件，白名单路径不会进入待处理列表。</div>
+      <span>删除操作会先进入隔离区，可恢复，不做永久删除。</span>
+    </div>
+    <div class="card">
+      <div class="panel-head">
+        <div><h2>文件产出来源识别</h2><p>按系统产出、软件运行产出、用户操作产出分层，结合安全程度和创建时间辅助处理。</p></div>
+        <div class="toolbar">
+          <button class="btn danger" data-provenance-delete>移入隔离区</button>
+          <button class="btn" data-open-whitelist-provenance>打开白名单</button>
+        </div>
+      </div>
+      <div class="table-tools">
+        <label class="filter-control grow">
+          <span>搜索文件 / 路径 / 产出者</span>
+          <input data-provenance-search type="search" placeholder="例如 Downloads、微信、Temp、PDF" />
+        </label>
+        <label class="filter-control">
+          <span>产出来源</span>
+          <select data-provenance-source>
+            <option value="all">全部</option>
+            <option value="用户操作产出">用户操作产出</option>
+            <option value="软件运行产出">软件运行产出</option>
+            <option value="系统产出">系统产出</option>
+          </select>
+        </label>
+        <label class="filter-control">
+          <span>安全程度</span>
+          <select data-provenance-safety>
+            <option value="all">全部</option>
+            <option value="低风险">低风险</option>
+            <option value="中风险">中风险</option>
+            <option value="高风险">高风险</option>
+          </select>
+        </label>
+        <button class="btn" data-provenance-clear>清空筛选</button>
+        <span class="table-count" data-provenance-count></span>
+      </div>
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" data-provenance-check-all /></th>
+          ${columns.map(column => `
+            <th>
+              <button class="th-sort" data-provenance-sort="${column.key}" title="点击切换升序/降序">
+                <span>${column.label}</span><span class="sort-indicator" data-provenance-indicator="${column.key}"></span>
+              </button>
+            </th>
+          `).join("")}
+          <th>路径</th><th>操作</th>
+        </tr></thead>
+        <tbody data-provenance-body></tbody>
+      </table>
+    </div>
+  `;
+  const body = view.querySelector("[data-provenance-body]");
+  const count = view.querySelector("[data-provenance-count]");
+  const search = view.querySelector("[data-provenance-search]");
+  const source = view.querySelector("[data-provenance-source]");
+  const safety = view.querySelector("[data-provenance-safety]");
+  const visibleRows = () => {
+    const keyword = state.filterText.trim().toLowerCase();
+    const filtered = rows.filter(row => {
+      const haystack = [row.name, row.path, row.producer, row.owner, row.sourceType, row.reason].join(" ").toLowerCase();
+      return (!keyword || haystack.includes(keyword)) &&
+        (state.sourceType === "all" || row.sourceType === state.sourceType) &&
+        (state.safety === "all" || row.safetyLevel === state.safety);
+    });
+    return filtered.sort((a, b) => {
+      const left = rowValue(a, state.sortKey);
+      const right = rowValue(b, state.sortKey);
+      const result = typeof left === "number" && typeof right === "number"
+        ? left - right
+        : String(left).localeCompare(String(right), "zh-Hans-CN", { numeric: true });
+      return state.sortDir === "asc" ? result : -result;
+    });
+  };
+  const openDetail = item => {
+    openDrawer(item.name, "产出来源详情", [
+      { label: "产出来源", value: item.sourceType },
+      { label: "产出者", value: item.producer || "未识别" },
+      { label: "安全程度", value: item.safetyLevel },
+      { label: "创建时间", value: item.created || "-" },
+      { label: "修改时间", value: item.lastWrite || "-" },
+      { label: "文件大小", value: item.size },
+      { label: "路径", value: item.path },
+      { label: "判断依据", value: item.evidence || item.reason || "-" },
+      { label: "建议操作", value: item.recommendation || "不确定时先加入白名单或保留观察。" }
+    ]);
+    const drawerBody = document.getElementById("drawerBody");
+    drawerBody.insertAdjacentHTML("beforeend", `
+      <div class="confirm-actions">
+        <button class="btn danger" data-provenance-delete-one>移入隔离区</button>
+        <button class="btn" data-provenance-whitelist-one>加入白名单</button>
+      </div>
+    `);
+    drawerBody.querySelector("[data-provenance-delete-one]").addEventListener("click", () => openCleanConfirm([item]));
+    drawerBody.querySelector("[data-provenance-whitelist-one]").addEventListener("click", () => {
+      sendNative("addWhitelist", { path: item.path, reason: `用户白名单：${item.name}` });
+    });
+  };
+  const renderRows = () => {
+    const visible = visibleRows();
+    body.innerHTML = visible.length ? visible.map((row, index) => `
+      <tr data-row-type="provenance" data-index="${index}">
+        <td><input type="checkbox" data-provenance-row-check ${row.deletable ? "" : "disabled"} /></td>
+        <td><strong>${escapeHtml(row.name)}</strong></td>
+        <td><span class="tag ${row.sourceType === "用户操作产出" ? "move" : row.sourceType === "系统产出" ? "official" : "keep"}">${escapeHtml(row.sourceType)}</span></td>
+        <td>${escapeHtml(row.producer || "未识别")}</td>
+        <td><span class="tag ${safetyClass(row.safetyLevel)}">${escapeHtml(row.safetyLevel)}</span></td>
+        <td>${escapeHtml(row.created || "-")}</td>
+        <td>${escapeHtml(row.size)}</td>
+        <td>${escapeHtml(row.path)}</td>
+        <td><button class="btn mini" data-provenance-detail="${index}">详情</button></td>
+      </tr>
+    `).join("") : emptyRow(9, "暂无匹配文件。");
+    count.textContent = `显示 ${visible.length} / ${rows.length} 项`;
+    view.querySelectorAll("[data-provenance-indicator]").forEach(node => {
+      const active = node.dataset.provenanceIndicator === state.sortKey;
+      node.textContent = active ? (state.sortDir === "asc" ? "↑" : "↓") : "↕";
+      node.classList.toggle("active", active);
+    });
+    body.querySelectorAll("[data-provenance-detail]").forEach(button => {
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        openDetail(visible[Number(button.dataset.provenanceDetail)]);
+      });
+    });
+    body.querySelectorAll('[data-row-type="provenance"]').forEach(row => {
+      row.addEventListener("click", event => {
+        if (event.target.tagName === "INPUT" || event.target.tagName === "BUTTON") return;
+        openDetail(visible[Number(row.dataset.index)]);
+      });
+    });
+  };
+  search.addEventListener("input", () => { state.filterText = search.value; renderRows(); });
+  source.addEventListener("change", () => { state.sourceType = source.value; renderRows(); });
+  safety.addEventListener("change", () => { state.safety = safety.value; renderRows(); });
+  view.querySelector("[data-provenance-clear]").addEventListener("click", () => {
+    state.filterText = "";
+    state.sourceType = "all";
+    state.safety = "all";
+    search.value = "";
+    source.value = "all";
+    safety.value = "all";
+    renderRows();
+  });
+  view.querySelectorAll("[data-provenance-sort]").forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.provenanceSort;
+      if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      else {
+        state.sortKey = key;
+        state.sortDir = key === "size" || key === "created" || key === "safetyScore" ? "desc" : "asc";
+      }
+      renderRows();
+    });
+  });
+  view.querySelector("[data-provenance-check-all]").addEventListener("change", event => {
+    body.querySelectorAll("[data-provenance-row-check]:not(:disabled)").forEach(input => {
+      input.checked = event.target.checked;
+    });
+  });
+  view.querySelector("[data-provenance-delete]").addEventListener("click", () => {
+    const visible = visibleRows();
+    const selected = [...body.querySelectorAll('tr[data-row-type="provenance"]')]
+      .filter(row => row.querySelector("[data-provenance-row-check]")?.checked)
+      .map(row => visible[Number(row.dataset.index)])
+      .filter(Boolean);
+    if (!selected.length) {
+      showToast("请先选择可处理的文件");
+      return;
+    }
+    openCleanConfirm(selected);
+  });
+  view.querySelector("[data-open-whitelist-provenance]").addEventListener("click", () => sendNative("openWhitelist"));
+  renderRows();
 }
 
 function renderCleanup(rows) {
@@ -1323,6 +1525,7 @@ async function init() {
     renderStatus(data.meta);
     renderOverview(data);
     renderDiagnosis(data.diagnosis, data.meta || {});
+    renderProvenance(data.provenance || []);
     renderCleanup(data.cleanup);
     renderMigration(data.migration);
     renderOfficial(data.official);

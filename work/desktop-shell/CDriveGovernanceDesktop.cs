@@ -828,7 +828,30 @@ namespace CDriveGovernanceDesktop
             bool underLocal = !string.IsNullOrWhiteSpace(local) && lower.StartsWith(local);
             string ext = Path.GetExtension(lower);
             bool tempExt = ext == ".tmp" || ext == ".temp" || ext == ".log" || ext == ".dmp" || ext == ".etl" || ext == ".bak" || ext == ".old";
-            return inKnownTemp || (underLocal && tempExt);
+            return inKnownTemp || (underLocal && tempExt) || IsAllowedUserOperationPath(full);
+        }
+
+        private bool IsAllowedUserOperationPath(string path)
+        {
+            string full;
+            try { full = Path.GetFullPath(path); } catch { return false; }
+            if (!File.Exists(full) || IsProtectedPath(full)) return false;
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (string.IsNullOrWhiteSpace(profile)) return false;
+            string lower = full.ToLowerInvariant();
+            string root = profile.ToLowerInvariant().TrimEnd('\\') + "\\";
+            if (!lower.StartsWith(root)) return false;
+            if (lower.Contains("\\appdata\\") || lower.Contains("\\programdata\\") || lower.Contains("\\packages\\")) return false;
+            string[] allowed =
+            {
+                "\\desktop\\",
+                "\\downloads\\",
+                "\\documents\\",
+                "\\pictures\\",
+                "\\videos\\",
+                "\\music\\"
+            };
+            return allowed.Any(token => lower.Contains(token));
         }
 
         private string GetCleanBlockReason(string path)
@@ -839,7 +862,7 @@ namespace CDriveGovernanceDesktop
             try { full = Path.GetFullPath(path); }
             catch { return "路径格式异常"; }
             if (IsProtectedPath(full)) return "命中系统/程序保护路径";
-            if (!IsAllowedCleanPath(full)) return "不在允许自动清理范围，仅支持临时/缓存/日志类路径";
+            if (!IsAllowedCleanPath(full)) return "不在允许自动清理范围，仅支持临时/缓存/日志或用户目录文件";
             if (IsFileLocked(full)) return "文件正在使用或权限不足";
             return "";
         }
@@ -1255,6 +1278,7 @@ namespace CDriveGovernanceDesktop
                 if (mode == "SoftwareLeftover") EmphasizeSoftwareLeftover(root);
                 if (mode == "Deep") EmphasizeDeepMode(root);
 
+                root["provenance"] = BuildProvenanceRows(root);
                 root["quarantine"] = BuildQuarantineRows();
                 root["reports"] = BuildReportRows();
 
@@ -1287,6 +1311,7 @@ namespace CDriveGovernanceDesktop
                 meta["cleanupCandidates"] = root.ContainsKey("cleanup") ? ToArrayList(root["cleanup"]).Count : 0;
                 meta["lastOperation"] = DateTime.Now.ToString("HH:mm:ss");
                 root["settings"] = BuildSettingsSnapshot();
+                root["provenance"] = BuildProvenanceRows(root);
                 root["quarantine"] = BuildQuarantineRows();
                 root["reports"] = BuildReportRows();
 
@@ -1313,13 +1338,14 @@ namespace CDriveGovernanceDesktop
             if (rows.Count == 0) return 0;
             var keep = new ArrayList();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var whitelist = LoadWhitelistPaths();
             int removed = 0;
             foreach (object item in rows)
             {
                 var row = item as Dictionary<string, object>;
                 if (row == null) { removed++; continue; }
                 string path = row.ContainsKey("path") ? Convert.ToString(row["path"]) : "";
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !seen.Add(path))
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !seen.Add(path) || IsWhitelisted(path, whitelist))
                 {
                     removed++;
                     continue;
@@ -1348,6 +1374,277 @@ namespace CDriveGovernanceDesktop
                 }
             }
             return removed;
+        }
+
+        private ArrayList BuildProvenanceRows(Dictionary<string, object> root)
+        {
+            var result = new ArrayList();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var whitelist = LoadWhitelistPaths();
+            if (root.ContainsKey("cleanup"))
+            {
+                foreach (object item in ToArrayList(root["cleanup"]))
+                {
+                    var row = item as Dictionary<string, object>;
+                    if (row == null) continue;
+                    string path = Convert.ToString(row.ContainsKey("path") ? row["path"] : "");
+                    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !seen.Add(path) || IsWhitelisted(path, whitelist)) continue;
+                    AddProvenanceRow(result, path, row);
+                }
+            }
+
+            foreach (string path in EnumerateUserOperationFiles(260))
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !seen.Add(path) || IsWhitelisted(path, whitelist)) continue;
+                AddProvenanceRow(result, path, null);
+            }
+
+            foreach (string path in EnumerateSystemGeneratedFiles(80))
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !seen.Add(path) || IsWhitelisted(path, whitelist)) continue;
+                AddProvenanceRow(result, path, null);
+            }
+
+            var sorted = result.Cast<Dictionary<string, object>>()
+                .OrderBy(r => Convert.ToString(r["sourceType"]) == "用户操作产出" ? 0 : Convert.ToString(r["sourceType"]) == "软件运行产出" ? 1 : 2)
+                .ThenByDescending(r => Convert.ToInt32(r["safetyScore"]))
+                .ThenByDescending(r => Convert.ToString(r["created"]))
+                .Take(360)
+                .ToList();
+            var finalRows = new ArrayList();
+            foreach (var row in sorted) finalRows.Add(row);
+            return finalRows;
+        }
+
+        private void AddProvenanceRow(ArrayList result, string path, Dictionary<string, object> existing)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                string sourceType = ClassifySourceType(path);
+                string producer = ResolveProducer(path, existing);
+                string safety = ResolveSafetyLevel(path, sourceType);
+                var row = new Dictionary<string, object>();
+                row["id"] = existing != null && existing.ContainsKey("id") ? existing["id"] : "PV-" + Math.Abs(path.GetHashCode()).ToString("X");
+                row["name"] = info.Name;
+                row["path"] = info.FullName;
+                row["sourceType"] = sourceType;
+                row["producer"] = producer;
+                row["owner"] = existing != null && existing.ContainsKey("owner") ? existing["owner"] : producer;
+                row["publisher"] = existing != null && existing.ContainsKey("publisher") ? existing["publisher"] : "-";
+                row["signature"] = existing != null && existing.ContainsKey("signature") ? existing["signature"] : "未检查";
+                row["safetyLevel"] = safety;
+                row["safetyScore"] = safety == "低风险" ? 1 : safety == "中风险" ? 2 : 3;
+                row["size"] = FormatBytes(info.Length);
+                row["created"] = info.CreationTime.ToString("yyyy-MM-dd HH:mm");
+                row["lastWrite"] = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
+                row["source"] = sourceType;
+                row["risk"] = safety;
+                row["reason"] = BuildProvenanceReason(path, sourceType);
+                row["evidence"] = BuildProvenanceEvidence(path, sourceType, producer);
+                row["recommendation"] = BuildProvenanceRecommendation(sourceType, safety);
+                row["snapshot"] = row["evidence"];
+                row["recoverable"] = true;
+                row["deletable"] = sourceType != "系统产出" && !IsProtectedPath(info.FullName);
+                result.Add(row);
+            }
+            catch { }
+        }
+
+        private IEnumerable<string> EnumerateUserOperationFiles(int max)
+        {
+            var result = new List<string>();
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (string.IsNullOrWhiteSpace(profile) || !Directory.Exists(profile)) return result;
+            string[] roots =
+            {
+                Path.Combine(profile, "Desktop"),
+                Path.Combine(profile, "Downloads"),
+                Path.Combine(profile, "Documents"),
+                Path.Combine(profile, "Pictures"),
+                Path.Combine(profile, "Videos"),
+                Path.Combine(profile, "Music")
+            };
+            foreach (string root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                var stack = new Stack<string>();
+                stack.Push(root);
+                while (stack.Count > 0 && result.Count < max)
+                {
+                    string dir = stack.Pop();
+                    try
+                    {
+                        foreach (string file in Directory.GetFiles(dir))
+                        {
+                            if (result.Count >= max) break;
+                            try
+                            {
+                                var info = new FileInfo(file);
+                                if (info.Length <= 0) continue;
+                                result.Add(file);
+                            }
+                            catch { }
+                        }
+                        foreach (string sub in Directory.GetDirectories(dir))
+                        {
+                            string name = Path.GetFileName(sub);
+                            if (name.StartsWith(".", StringComparison.OrdinalIgnoreCase)) continue;
+                            stack.Push(sub);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return result.OrderByDescending(p =>
+            {
+                try { return new FileInfo(p).CreationTime; } catch { return DateTime.MinValue; }
+            }).Take(max);
+        }
+
+        private IEnumerable<string> EnumerateSystemGeneratedFiles(int max)
+        {
+            var result = new List<string>();
+            string drive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
+            string[] roots =
+            {
+                Path.Combine(drive + "\\", "Windows", "Temp"),
+                Path.Combine(drive + "\\", "Windows", "SoftwareDistribution", "Download")
+            };
+            foreach (string root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                try
+                {
+                    foreach (string file in Directory.GetFiles(root, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        if (result.Count >= max) break;
+                        result.Add(file);
+                    }
+                }
+                catch { }
+            }
+            return result.OrderByDescending(p =>
+            {
+                try { return new FileInfo(p).LastWriteTime; } catch { return DateTime.MinValue; }
+            }).Take(max);
+        }
+
+        private string ClassifySourceType(string path)
+        {
+            string full;
+            try { full = Path.GetFullPath(path); } catch { full = path; }
+            string lower = full.ToLowerInvariant();
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).ToLowerInvariant();
+            if (IsProtectedPath(full) || lower.Contains("\\windows\\")) return "系统产出";
+            if (lower.Contains("\\appdata\\local\\temp\\") || lower.Contains("\\temp\\") || lower.Contains("\\cache\\") ||
+                lower.Contains("\\code cache\\") || lower.Contains("\\gpucache\\") || lower.Contains("\\crashdumps\\"))
+            {
+                return "软件运行产出";
+            }
+            if (!string.IsNullOrWhiteSpace(profile) && lower.StartsWith(profile) &&
+                (lower.Contains("\\desktop\\") || lower.Contains("\\downloads\\") || lower.Contains("\\documents\\") ||
+                 lower.Contains("\\pictures\\") || lower.Contains("\\videos\\") || lower.Contains("\\music\\")))
+            {
+                return "用户操作产出";
+            }
+            if (lower.Contains("\\appdata\\")) return "软件运行产出";
+            return "用户操作产出";
+        }
+
+        private string ResolveProducer(string path, Dictionary<string, object> existing)
+        {
+            if (existing != null)
+            {
+                string owner = Convert.ToString(existing.ContainsKey("owner") ? existing["owner"] : "");
+                if (!string.IsNullOrWhiteSpace(owner) && owner != "临时目录") return owner;
+                string publisher = Convert.ToString(existing.ContainsKey("publisher") ? existing["publisher"] : "");
+                if (!string.IsNullOrWhiteSpace(publisher) && publisher != "-") return publisher;
+            }
+            string lower = path.ToLowerInvariant();
+            if (lower.Contains("\\downloads\\")) return "用户下载/浏览器";
+            if (lower.Contains("\\desktop\\")) return "用户桌面操作";
+            if (lower.Contains("\\documents\\")) return "用户文档/软件保存";
+            if (lower.Contains("\\pictures\\")) return "用户图片/截图/设计软件";
+            if (lower.Contains("\\videos\\")) return "用户视频/录屏软件";
+            if (lower.Contains("\\music\\")) return "用户音频/媒体软件";
+            if (lower.Contains("_mei")) return "Python 打包程序运行缓存";
+            if (lower.Contains("chrome") || lower.Contains("edge")) return "浏览器缓存";
+            return "未识别";
+        }
+
+        private string ResolveSafetyLevel(string path, string sourceType)
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            if (sourceType == "系统产出") return "高风险";
+            if (sourceType == "软件运行产出")
+            {
+                if (IsAllowedCleanPath(path)) return "低风险";
+                return "中风险";
+            }
+            if (ext == ".tmp" || ext == ".log" || ext == ".bak" || ext == ".old") return "低风险";
+            if (ext == ".exe" || ext == ".dll" || ext == ".sys" || ext == ".msi" || ext == ".bat" || ext == ".cmd" || ext == ".ps1" || ext == ".url") return "中风险";
+            return "高风险";
+        }
+
+        private string BuildProvenanceReason(string path, string sourceType)
+        {
+            if (sourceType == "系统产出") return "命中 Windows 或受保护路径，不能在工具内直接清理。";
+            if (sourceType == "软件运行产出") return "文件位于临时、缓存或软件运行目录，通常由软件运行时产生。";
+            return "文件位于桌面、下载、文档、图片、视频或音乐等用户目录，通常由用户下载、保存、导出或复制产生。";
+        }
+
+        private string BuildProvenanceEvidence(string path, string sourceType, string producer)
+        {
+            return "路径特征: " + path + Environment.NewLine +
+                "来源判断: " + sourceType + Environment.NewLine +
+                "产出者线索: " + producer + Environment.NewLine +
+                "处理边界: 删除会先进入隔离区；白名单命中后不再显示。";
+        }
+
+        private string BuildProvenanceRecommendation(string sourceType, string safety)
+        {
+            if (sourceType == "系统产出") return "只允许使用官方清理入口，不提供删除。";
+            if (sourceType == "软件运行产出" && safety == "低风险") return "可先移入隔离区，观察无异常后再清理过期隔离项。";
+            if (sourceType == "用户操作产出") return "请确认文件不再需要；不确定就加入白名单或迁移到其他磁盘。";
+            return "建议查看详情后再决定是否隔离。";
+        }
+
+        private HashSet<string> LoadWhitelistPaths()
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string white = Path.Combine(appBaseDir, "sdc-data", "whitelist.tsv");
+            if (!File.Exists(white)) return result;
+            try
+            {
+                foreach (string line in File.ReadAllLines(white, Encoding.UTF8))
+                {
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("Path\t", StringComparison.OrdinalIgnoreCase)) continue;
+                    string path = line.Split('\t')[0];
+                    if (!string.IsNullOrWhiteSpace(path)) result.Add(path);
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        private bool IsWhitelisted(string path, HashSet<string> whitelist)
+        {
+            if (whitelist == null || whitelist.Count == 0 || string.IsNullOrWhiteSpace(path)) return false;
+            string full;
+            try { full = Path.GetFullPath(path); } catch { full = path; }
+            foreach (string item in whitelist)
+            {
+                if (string.IsNullOrWhiteSpace(item)) continue;
+                if (full.Equals(item, StringComparison.OrdinalIgnoreCase)) return true;
+                try
+                {
+                    string whiteFull = Path.GetFullPath(item);
+                    if (Directory.Exists(whiteFull) && full.StartsWith(whiteFull.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private Dictionary<string, object> BuildSettingsSnapshot()
